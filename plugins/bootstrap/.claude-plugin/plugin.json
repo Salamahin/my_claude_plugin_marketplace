@@ -1,0 +1,9 @@
+{
+  "name": "bootstrap",
+  "version": "1.0.0",
+  "description": "Project scaffolding skills. Currently ships python-uv-project, which creates a uv-managed Python project with a src-based layout, ruff, mypy, basedpyright, pytest, and pre-commit.",
+  "author": {
+    "name": "Salamahin"
+  },
+  "keywords": ["python", "uv", "scaffold", "bootstrap", "src-layout", "template"]
+}

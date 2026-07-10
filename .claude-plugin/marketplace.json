@@ -1,0 +1,22 @@
+{
+  "name": "my-claude-plugin-marketplace",
+  "owner": {
+    "name": "Salamahin"
+  },
+  "metadata": {
+    "description": "Personal Claude Code plugin marketplace: code styles and project bootstrap tooling.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "codestyles",
+      "source": "./plugins/codestyles",
+      "description": "Coding style guides exposed as skills. Currently ships the python-style guide."
+    },
+    {
+      "name": "bootstrap",
+      "source": "./plugins/bootstrap",
+      "description": "Project scaffolding skills. Currently ships python-uv-project (uv + src-based layout)."
+    }
+  ]
+}

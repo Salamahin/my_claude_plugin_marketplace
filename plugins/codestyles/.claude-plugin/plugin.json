@@ -1,0 +1,9 @@
+{
+  "name": "codestyles",
+  "version": "1.0.0",
+  "description": "Coding style guides exposed as skills. Currently ships the python-style guide covering side-effect separation, immutability, error handling, logging, naming, testing, types, and complexity.",
+  "author": {
+    "name": "Salamahin"
+  },
+  "keywords": ["python", "style", "guidelines", "linting", "code-quality"]
+}
