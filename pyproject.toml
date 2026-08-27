@@ -1,0 +1,13 @@
+[project]
+name = "claude-plugin-marketplace-dev"
+version = "0.1.0"
+description = "Dev/test harness for the Python hook scripts shipped by this marketplace's plugins."
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Salamahin" }]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["plugins/codestyles/tests"]

@@ -11,14 +11,20 @@ A personal [Claude Code](https://code.claude.com/docs) plugin marketplace. It ho
 ├── plugins/
 │   ├── codestyles/               # "codestyles" plugin
 │   │   ├── .claude-plugin/plugin.json
-│   │   └── skills/
-│   │       └── python-style/
-│   │           └── SKILL.md
+│   │   ├── hooks/hooks.json      # PreToolUse + PostToolUse hooks
+│   │   ├── scripts/              # hook scripts (stdlib only, PEP 723)
+│   │   │   ├── precheck.py
+│   │   │   └── checker.py
+│   │   ├── tests/                # pytest suite for the hook scripts
+│   │   ├── skills/
+│   │   │   └── python-style/SKILL.md
+│   │   └── README.md
 │   └── bootstrap/                # "bootstrap" plugin
 │       ├── .claude-plugin/plugin.json
 │       └── skills/
 │           └── python-uv-project/
 │               └── SKILL.md
+├── pyproject.toml                # pytest config for the hook scripts
 └── README.md
 ```
 
@@ -26,11 +32,20 @@ A personal [Claude Code](https://code.claude.com/docs) plugin marketplace. It ho
 
 ### `codestyles`
 
-Coding style guides, exposed as skills Claude auto-applies while writing or reviewing code.
+Coding style guides, exposed as skills Claude auto-applies while writing or reviewing code, plus two hooks that keep it honest.
 
 | Skill | What it does |
 |-------|--------------|
-| `python-style` | Opinionated Python style guide: separate side effects from business logic, prefer immutable/non-nullable data, let exceptions propagate, log only at boundaries, meaningful naming, functional-first paradigm, pure-unit testing, strict typing, and low cyclomatic complexity. Triggers whenever Claude writes, edits, or reviews Python. |
+| `python-style` | Opinionated Python style guide: separate side effects from business logic, prefer immutable/non-nullable data, validate untrusted external data at the boundary (Pydantic) instead of deep in the core, let exceptions propagate, log only at boundaries, meaningful naming, functional-first paradigm, pure-unit testing, strict typing, and low cyclomatic complexity. Triggers whenever Claude writes, edits, or reviews Python. |
+
+The plugin also ships two **advisory** hooks (`plugins/codestyles/hooks/hooks.json`) — they never block a tool call, they only add context:
+
+| Hook | Fires on | What it does |
+|------|----------|--------------|
+| `PreToolUse` | `Write`, `Edit`, `MultiEdit`, `NotebookEdit` | If the file's language has a `{language}-style` skill in the plugin, reminds Claude to read and apply it *before* writing. |
+| `PostToolUse` | same tools | Reviews comments in the code just written: clean-code stance (keep a comment only for tracker-linked `TODO`/`FIXME` or public-API docs), comment density, length/spacing/trailing whitespace, and ASD-STE100 phrasing. |
+
+Requires [`uv`](https://docs.astral.sh/uv/) on `PATH` (falls back to `python3`); the hook scripts are standard-library only. Tune with `COMMENT_MAX_LEN`, `COMMENT_MAX_RATIO`, `COMMENT_STE_WORDS`, `COMMENT_STRICT` — see [`plugins/codestyles/README.md`](plugins/codestyles/README.md).
 
 ### `bootstrap`
 
@@ -115,7 +130,7 @@ To remove it entirely:
    }
    ```
 
-2. Add components under the plugin directory. Skills live at `skills/<skill-name>/SKILL.md`; plugins can also carry `commands/`, `agents/`, `hooks/`, and MCP servers.
+2. Add components under the plugin directory. Skills live at `skills/<skill-name>/SKILL.md`; plugins can also carry `commands/`, `agents/`, `hooks/hooks.json`, and MCP servers. Hooks are registered automatically when the plugin is enabled, and hook commands can reference the plugin directory as `${CLAUDE_PLUGIN_ROOT}`.
 
 3. Register the plugin in `.claude-plugin/marketplace.json` by appending to the `plugins` array:
 
@@ -147,8 +162,17 @@ To remove it entirely:
 
 The `description` is what Claude reads to decide when to activate the skill — make it specific about the trigger conditions.
 
+## Development
+
+The `codestyles` hook scripts have a pytest suite. From the repo root:
+
+```bash
+uv run --with pytest pytest
+```
+
 ## References
 
 - [Plugin marketplaces](https://code.claude.com/docs/en/plugin-marketplaces.md)
 - [Creating plugins](https://code.claude.com/docs/en/plugins.md)
 - [Discovering & installing plugins](https://code.claude.com/docs/en/discover-plugins.md)
+- [Hooks reference](https://code.claude.com/docs/en/hooks.md)

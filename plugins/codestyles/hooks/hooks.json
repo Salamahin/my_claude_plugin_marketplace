@@ -1,0 +1,31 @@
+{
+  "description": "Reminds Claude to apply the matching {language}-style skill before a write, and reviews comment style in the code it just wrote.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/scripts/precheck.py\" 2>/dev/null || python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/precheck.py\" 2>/dev/null || exit 0",
+            "timeout": 30,
+            "statusMessage": "Checking for a codestyle skill..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --script \"${CLAUDE_PLUGIN_ROOT}/scripts/checker.py\" 2>/dev/null || python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/checker.py\" 2>/dev/null || exit 0",
+            "timeout": 30,
+            "statusMessage": "Reviewing comment style..."
+          }
+        ]
+      }
+    ]
+  }
+}

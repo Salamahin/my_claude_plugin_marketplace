@@ -147,6 +147,42 @@ def collect(item: str, result: tuple[str, ...] = ()) -> tuple[str, ...]:
     return (*result, item)
 ```
 
+### Validating untrusted external data
+
+`@dataclass(frozen=True)` is the default for internal value objects, but it does
+not validate: it trusts whatever it is given. For data crossing the system
+boundary — API payloads, message queues, config files, third-party responses,
+anything you cannot trust the shape of — prefer a **Pydantic** model when
+validation adds value. It parses and validates at the edge, coerces types, and
+fails loudly on malformed input, so the rest of the system can trust the data.
+
+Keep this at the boundary only: parse into a validated model at the edge, then
+pass plain, trusted values into pure business logic. Do not scatter Pydantic
+models through the core, and do not reach for one when a `frozen` dataclass over
+already-trusted internal data is enough.
+
+**Bad example**: trusting an untyped external payload deep in the code
+```python
+def total_price(payload: dict) -> float:
+    return sum(item["price"] * item["qty"] for item in payload["items"])
+```
+
+**Good example**: validate at the boundary, then work with trusted data
+```python
+class LineItem(BaseModel):
+    price: float
+    qty: int
+
+class Order(BaseModel):
+    items: list[LineItem]
+
+def total_price(order: Order) -> float:
+    return sum(item.price * item.qty for item in order.items)
+
+# boundary: parse + validate untrusted input once
+order = Order.model_validate(raw_payload)
+```
+
 
 ## Error handling
 

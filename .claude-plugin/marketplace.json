@@ -5,13 +5,13 @@
   },
   "metadata": {
     "description": "Personal Claude Code plugin marketplace: code styles and project bootstrap tooling.",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "plugins": [
     {
       "name": "codestyles",
       "source": "./plugins/codestyles",
-      "description": "Coding style guides exposed as skills. Currently ships the python-style guide."
+      "description": "Coding style guides as skills (python-style) plus advisory hooks: a PreToolUse reminder to apply the matching {language}-style skill, and a PostToolUse comment-style review of the code Claude just wrote."
     },
     {
       "name": "bootstrap",
