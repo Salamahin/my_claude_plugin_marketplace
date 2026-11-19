@@ -5,6 +5,14 @@ description: Language-agnostic coding style guide — separating side effects fr
 
 # Generic coding style
 
+> Clean code is simple and direct. Clean code reads like well-written prose. Clean code never
+> obscures the designer's intent but rather is full of crisp abstractions and straightforward
+> lines of control.
+>
+> — Grady Booch, quoted by Robert C. Martin in *Clean Code* (2008)
+
+Every rule below serves that goal: code a reader can follow top to bottom, like prose.
+
 These rules apply to every language. A `{language}-style` skill, when one exists, builds on
 this guide: it shows the rules in that language's idioms and adds language-only rules. When
 the two disagree, the language-specific skill wins for that language.
