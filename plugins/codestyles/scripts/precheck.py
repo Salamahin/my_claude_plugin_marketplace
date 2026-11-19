@@ -12,6 +12,7 @@ from checker import _basename, _extension, changed_files, emit, parse_payload, t
 
 STYLE_SUFFIX = "-style"
 PLUGIN_NAME = "codestyles"
+GENERIC = "generic"
 
 EXT_LANGUAGE: dict[str, str] = {
     ".py": "python", ".pyi": "python", ".pyw": "python",
@@ -37,14 +38,41 @@ def language_for(path: str) -> str:
     return EXT_LANGUAGE.get(_extension(_basename(path).lower()), "")
 
 
+def skill_ref(name: str) -> str:
+    return f"`{PLUGIN_NAME}:{name}{STYLE_SUFFIX}`"
+
+
+def language_skill_context(language: str, filename: str, has_generic: bool) -> str:
+    if not has_generic:
+        return (
+            f"A {skill_ref(language)} skill is available for {filename}. "
+            "Read and apply that style guide as you write this file."
+        )
+    return (
+        f"A {skill_ref(language)} skill is available for {filename}. "
+        f"It builds on {skill_ref(GENERIC)}. "
+        "Read and apply both style guides as you write this file."
+    )
+
+
+def generic_skill_context(filename: str) -> str:
+    return (
+        f"No language-specific style skill exists for {filename}. "
+        f"Read and apply {skill_ref(GENERIC)} as you write this file."
+    )
+
+
 def precheck_context(path: str, available: frozenset[str]) -> str | None:
     language = language_for(path)
-    if not language or language not in available:
+    filename = _basename(path)
+    has_generic = GENERIC in available
+    if not language:
         return None
-    return (
-        f"A `{PLUGIN_NAME}:{language}{STYLE_SUFFIX}` skill is available for "
-        f"{_basename(path)}. Read and apply that style guide as you write this file."
-    )
+    if language in available:
+        return language_skill_context(language, filename, has_generic)
+    if has_generic:
+        return generic_skill_context(filename)
+    return None
 
 
 def _unique(values: list[str]) -> list[str]:

@@ -14,6 +14,7 @@ from checker import Config
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 DEFAULT = Config()
 PY_AVAILABLE = frozenset({"python"})
+WITH_GENERIC = frozenset({"python", "generic"})
 
 
 def count(text: str, path: str, config: Config = DEFAULT) -> int:
@@ -306,6 +307,21 @@ def test_precheck_unknown_extension() -> None:
     assert pc.precheck_context("notes.txt", PY_AVAILABLE) is None
 
 
+def test_precheck_language_skill_points_to_generic() -> None:
+    ctx = pc.precheck_context("src/app.py", WITH_GENERIC)
+    assert ctx is not None and "codestyles:python-style" in ctx and "codestyles:generic-style" in ctx
+
+
+def test_precheck_falls_back_to_generic() -> None:
+    ctx = pc.precheck_context("main.go", WITH_GENERIC)
+    assert ctx is not None and "codestyles:generic-style" in ctx and "go-style" not in ctx
+
+
+def test_precheck_generic_needs_known_language() -> None:
+    assert pc.precheck_context("notes.txt", WITH_GENERIC) is None
+    assert pc.precheck_context("README.md", WITH_GENERIC) is None
+
+
 def test_precheck_review_requires_write_intent() -> None:
     read_payload = {"tool_name": "Read", "tool_input": {"file_path": "a.py"}}
     assert pc.review(read_payload, PY_AVAILABLE) is None
@@ -362,7 +378,12 @@ def test_emit_stays_silent_without_context(capsys: pytest.CaptureFixture[str]) -
 
 
 def test_available_languages_reads_real_skills_dir() -> None:
-    assert "python" in pc.available_languages(pc.skills_dir())
+    assert {"python", "generic"} <= pc.available_languages(pc.skills_dir())
+
+
+def test_python_style_references_generic_style() -> None:
+    python_style = (pc.skills_dir() / "python-style" / "SKILL.md").read_text()
+    assert "codestyles:generic-style" in python_style
 
 
 def test_precheck_end_to_end() -> None:

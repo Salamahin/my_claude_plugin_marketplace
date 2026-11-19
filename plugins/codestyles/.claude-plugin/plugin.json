@@ -1,14 +1,15 @@
 {
   "name": "codestyles",
-  "version": "1.1.0",
-  "description": "Coding style guides exposed as skills, plus two advisory hooks. Ships python-style (side-effect separation, immutability, boundary validation, error handling, logging, naming, testing, types, complexity). A PreToolUse hook reminds Claude to apply the matching {language}-style skill; a PostToolUse hook reviews comment style in the code it just wrote.",
+  "version": "1.2.0",
+  "description": "Coding style guides exposed as skills, plus two advisory hooks. Ships generic-style (language-agnostic: side-effect separation, immutability, error handling, logging, naming, testing, types, complexity) and python-style, which builds on it with Python idioms. A PreToolUse hook reminds Claude to apply the matching {language}-style skill, falling back to generic-style; a PostToolUse hook reviews comment style in the code it just wrote.",
   "author": {
     "name": "Salamahin"
   },
   "keywords": [
-    "python",
     "style",
     "guidelines",
+    "generic",
+    "python",
     "linting",
     "code-quality",
     "hooks",

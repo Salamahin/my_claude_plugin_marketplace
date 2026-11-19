@@ -17,6 +17,7 @@ A personal [Claude Code](https://code.claude.com/docs) plugin marketplace. It ho
 │   │   │   └── checker.py
 │   │   ├── tests/                # pytest suite for the hook scripts
 │   │   ├── skills/
+│   │   │   ├── generic-style/SKILL.md
 │   │   │   └── python-style/SKILL.md
 │   │   └── README.md
 │   └── bootstrap/                # "bootstrap" plugin
@@ -36,7 +37,8 @@ Coding style guides, exposed as skills Claude auto-applies while writing or revi
 
 | Skill | What it does |
 |-------|--------------|
-| `python-style` | Opinionated Python style guide: separate side effects from business logic, prefer immutable/non-nullable data, validate untrusted external data at the boundary (Pydantic) instead of deep in the core, let exceptions propagate, log only at boundaries, meaningful naming, functional-first paradigm, pure-unit testing, strict typing, and low cyclomatic complexity. Triggers whenever Claude writes, edits, or reviews Python. |
+| `generic-style` | Language-agnostic style guide: the rules below without language-specific idioms. Applies to any language; the `PreToolUse` hook points at it when no `{language}-style` skill exists. |
+| `python-style` | Builds on `generic-style`. Opinionated Python style guide: separate side effects from business logic, prefer immutable/non-nullable data, validate untrusted external data at the boundary (Pydantic) instead of deep in the core, let exceptions propagate, log only at boundaries, meaningful naming, functional-first paradigm, pure-unit testing, strict typing, and low cyclomatic complexity. Triggers whenever Claude writes, edits, or reviews Python. |
 
 The plugin also ships two **advisory** hooks (`plugins/codestyles/hooks/hooks.json`) — they never block a tool call, they only add context:
 

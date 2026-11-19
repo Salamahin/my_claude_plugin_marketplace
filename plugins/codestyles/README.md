@@ -6,7 +6,8 @@ Coding style guides for Claude Code, plus two hooks that keep generated code on-
 
 | Skill | What it does |
 |-------|--------------|
-| `python-style` | The style guide: side effects vs business logic, immutability, boundary validation (Pydantic at the edge), error handling, logging, naming, paradigm, testing, types, complexity. |
+| `generic-style` | The language-agnostic style guide: side effects vs business logic, immutability, non-nullable inputs, boundary validation, error handling, logging, documentation, naming, paradigm, testing, types, complexity. Applies to any language. |
+| `python-style` | Builds on `generic-style`: the same rules in Python idioms with examples, plus Python-only rules (frozen dataclasses, mutable defaults, Pydantic at the edge, `MagicMock`/`patch`, type hints). |
 
 ## Hooks
 
@@ -14,7 +15,7 @@ Coding style guides for Claude Code, plus two hooks that keep generated code on-
 
 | Event | Matcher | What it does |
 |-------|---------|--------------|
-| `PreToolUse` | `Write\|Edit\|MultiEdit\|NotebookEdit` | If a matching `{language}-style` skill exists in this plugin, reminds Claude to read and apply it before writing the file. |
+| `PreToolUse` | `Write\|Edit\|MultiEdit\|NotebookEdit` | Before Claude writes a source file, reminds it to read and apply the matching `{language}-style` skill together with `generic-style`, which it builds on. For a language without its own skill, points at `generic-style` alone. |
 | `PostToolUse` | `Write\|Edit\|MultiEdit\|NotebookEdit` | Reviews comments in the **changed code only**: clean-code stance (a comment usually means the code could be clearer — keep one only for tracker-linked `TODO`/`FIXME` tech debt or public-API docs), comment density, comment length/spacing/trailing whitespace, and ASD-STE100 phrasing. Docstring- and block-comment-aware. |
 
 Both hooks read the Claude Code hook payload from stdin and understand every write shape: `Write` (`content`/`file_text`), `Edit` (`new_string`, or nested `edits[]`), `MultiEdit` (`file_edits[]`, reported per file), and `NotebookEdit` (`new_source`).
@@ -45,4 +46,5 @@ uv run --with pytest pytest
 ## Adding a style guide
 
 1. Create `skills/{language}-style/SKILL.md` with YAML frontmatter (`name`, `description`). The `PreToolUse` hook discovers it by directory name — no code change needed.
-2. Bump `version` in `.claude-plugin/plugin.json`.
+2. Make it build on `generic-style`: open with a pointer to `codestyles:generic-style`, follow its section order, and keep only that language's idioms, examples and language-only rules. Do not restate the generic rules.
+3. Bump `version` in `.claude-plugin/plugin.json`.

@@ -1,20 +1,20 @@
 ---
 name: python-style
-description: Python coding style guide — covers separating side effects from business logic, immutability, error handling, logging, naming, testing, types, and complexity. Use whenever writing, editing, or reviewing Python code.
+description: Python coding style guide — builds on generic-style and adds Python idioms and examples: frozen dataclasses, mutable default arguments, Pydantic at the boundary, exceptions, type hints, pytest without MagicMock/patch, native test clients. Use whenever writing, editing, or reviewing Python code.
 ---
 
-# Generic coding style
+# Python coding style
+
+**This guide builds on `codestyles:generic-style`. Read and apply that skill first.** It holds
+the rules and their rationale; this skill shows them in Python and adds Python-only rules.
+When the two disagree, this skill wins for Python code.
+
+The sections below follow the order of `generic-style`.
 
 ## Separate side effects from business logic
 
-Business logic should, as much as possible:
-* avoid hidden mutable state
-* be free of side effects
-* be deterministic
-
-In practice, business functions should not perform I/O such as reading files, making network requests, querying databases, or reading system time. They should also not call entropy-based tools such as datetime.now() or random.
-
-Instead, side effects should be executed at the boundary of the system, and their results should be passed into business functions as arguments. This keeps core logic easier to test, reason about, and reuse.
+Python's usual entropy sources are `datetime.now()`, `time.time()`, `random` and `uuid4()`.
+Capture them at the boundary and inject them as values.
 
 **Bad example**: mixing file I/O with business logic
 ```python
@@ -78,21 +78,11 @@ def pick_discount_live(rng: Random) -> int:
     return pick_discount(entropy=make_discount_entropy(rng))
 ```
 
-
 ## Prefer non-nullable inputs in business logic
 
-In general, avoid passing nullable values into business functions. Nullable inputs often add unnecessary branching and increase cyclomatic complexity.
+In Python, "nullable" means `X | None` (or `Optional[X]`).
 
-When absence does not carry business meaning, prefer one of these instead:
-
-* a natural empty value, such as an empty list, set, dict, or string
-* a null-object that provides neutral behavior
-
-Use nullable values only when absence is itself a real part of the domain.
-
-At system boundaries, such as API payloads, databases, or third-party libraries, nullable or missing values may be unavoidable. Normalize them before they reach business logic.
-
-**Bad example**: using a nullable input where an empty collection already models the neutral case
+**Bad example**: a nullable input where an empty collection already models the neutral case
 ```python
 def foo(args: list[str] | None):
     if args is None:
@@ -102,7 +92,7 @@ def foo(args: list[str] | None):
         yield item
 ```
 
-**Good example**: using the collection’s natural empty-state behavior
+**Good example**: using the collection's natural empty-state behavior
 ```python
 def foo(args: list[str]):
     for item in args:
@@ -115,12 +105,13 @@ def foo_from_payload(args: list[str] | None):
     return foo(args or [])
 ```
 
-
 ## Prefer immutable data
 
-Prefer immutable data structures. Use `@dataclass(frozen=True)` for value objects. Do not mutate data passed in as arguments — return a new value instead. This makes data flow explicit and prevents action-at-a-distance bugs.
+Use `@dataclass(frozen=True)` for value objects. Prefer tuples and `frozenset` over lists
+and sets when a collection does not need to change.
 
-Python's mutable default argument is a common footgun: the default is evaluated once at definition time and shared across all calls.
+The mutable default argument is Python's classic trap: the default is evaluated once at
+definition time and shared across all calls.
 
 **Bad example**: mutating a passed-in argument
 ```python
@@ -147,18 +138,14 @@ def collect(item: str, result: tuple[str, ...] = ()) -> tuple[str, ...]:
     return (*result, item)
 ```
 
-### Validating untrusted external data
+## Validate untrusted data at the boundary
 
-`@dataclass(frozen=True)` is the default for internal value objects, but it does
-not validate: it trusts whatever it is given. For data crossing the system
-boundary — API payloads, message queues, config files, third-party responses,
-anything you cannot trust the shape of — prefer a **Pydantic** model when
-validation adds value. It parses and validates at the edge, coerces types, and
-fails loudly on malformed input, so the rest of the system can trust the data.
+`@dataclass(frozen=True)` is the default for internal value objects, but it does not
+validate: it trusts whatever it is given. For data crossing the system boundary, prefer a
+**Pydantic** model when validation adds value. It parses and validates at the edge, coerces
+types, and fails loudly on malformed input.
 
-Keep this at the boundary only: parse into a validated model at the edge, then
-pass plain, trusted values into pure business logic. Do not scatter Pydantic
-models through the core, and do not reach for one when a `frozen` dataclass over
+Keep Pydantic at the boundary only. Do not reach for it when a frozen dataclass over
 already-trusted internal data is enough.
 
 **Bad example**: trusting an untyped external payload deep in the code
@@ -183,14 +170,10 @@ def total_price(order: Order) -> float:
 order = Order.model_validate(raw_payload)
 ```
 
-
 ## Error handling
 
-Let exceptions propagate. Do not catch an exception just to return `None` or a sentinel value — this silently converts a failure into a plausible-looking result, hiding the error and shifting an invisible burden onto every caller.
-
-Only catch an exception when you can genuinely handle it at that point: retrying a transient failure, translating a low-level exception into a domain-specific one, or recovering with a meaningful fallback. If none of these apply, let it propagate and allow the caller to decide.
-
-When you do catch, be specific. Catching `Exception` broadly masks real bugs — unexpected errors should crash loudly, not disappear silently.
+In Python, errors are exceptions. Never write `except Exception:` (or a bare `except:`) to
+return a default. Chain translated exceptions with `raise ... from e` so the cause survives.
 
 **Bad example**: swallowing the exception and returning `None`
 ```python
@@ -209,7 +192,7 @@ def load_config(path: str) -> Config:
         return Config(**json.load(f))
 ```
 
-**Boundary example**: translate a low-level exception into a domain one at the edge of the system
+**Boundary example**: translate a low-level exception into a domain one at the edge
 ```python
 def load_config(path: str) -> Config:
     try:
@@ -235,12 +218,10 @@ except ValueError as e:
     raise InvalidDataError(data) from e
 ```
 
-
 ## Logging
 
-Log at system boundaries, not deep inside business logic. Business functions are pure and have no reason to log — logging is a side effect. Keep it at the edges: HTTP handlers, queue consumers, scheduled job entry points.
-
-Do not log and swallow an exception. Either propagate it (and let the boundary log it once), or handle it and log the outcome. Logging at every layer just duplicates noise and makes traces harder to read.
+Use the standard `logging` module with lazy `%`-style arguments, not f-strings, so messages
+are only formatted when emitted.
 
 **Bad example**: logging and swallowing — the error disappears
 ```python
@@ -275,23 +256,17 @@ def process_order(order: Order) -> Receipt:
     return receipt
 ```
 
-**Good example**: log meaningful events, not implementation steps
+**Good example**: log meaningful events at the boundary
 ```python
 def process_order(order: Order) -> Receipt:
     return compute_receipt(order)
 
-# At the boundary, log what matters to operations
 logger.info("Order %s fulfilled, total=%.2f", order.id, receipt.total)
 ```
 
-
 ## Documentation
 
-Docstrings are for public APIs only. Internal methods do not need docstrings.
-
-Comments are usually a code smell. If something needs a comment to be understood, it should be rewritten to be self-explanatory through better naming and structure.
-
-Never write comments that simply restate what the code does. Prefer expressive names for methods and variables instead.
+Docstrings are for public APIs only. Internal functions and methods do not need them.
 
 **Bad example**: comment restates the code
 ```python
@@ -321,33 +296,16 @@ if is_transient(error):
     retry()
 ```
 
-
 ## Naming
-
-Avoid generic, meaningless names for modules, packages, classes, or directories. Names like `utils`, `common`, `helpers`, `shared`, or `misc` give no information about what the code actually does.
-
-Use names that describe the specific responsibility of the code.
 
 **Bad examples**: `utils.py`, `common/`, `helpers.py`, `shared/`, `misc.py`
 
 **Good examples**: `timestamps.py`, `formatters.py`, `request_handler.py`, `retry_policy.py`
 
-If you feel the urge to create a `utils` module, it is a signal that the code needs to be reorganized into focused, well-named modules instead.
-
-
 ## Paradigm
 
-Prefer functional style over object-oriented, and object-oriented over imperative. In practice this means:
-
-* Prefer small, pure, generic functions over classes with methods
-* Prefer transforming data through function composition over mutating state
-* Prefer expressions over statements where they remain readable
-
-That said, do not over-engineer for the sake of paradigm purity. The best code is the simplest code that clearly expresses intent. If a plain loop or a simple class is more readable than a pipeline of higher-order functions, use it.
-
-Classes are the right tool when:
-* **Injecting behavior into business logic** — a class with a clear interface is easier to work with than passing one or several functions as arguments
-* **Keeping state over time** — accumulators, builders, or stateful processors are a natural fit for classes
+Comprehensions and generator expressions are Python's idiomatic functional style; prefer
+them over manual accumulation loops.
 
 **Bad example**: imperative accumulation
 ```python
@@ -404,14 +362,11 @@ def apply_discount(price: float, rate: float) -> float:
     return price * (1 - rate)
 ```
 
-
 ## Testing
 
-Business logic must be covered with unit tests. Because business logic is pure and side-effect-free (see above), it should be directly testable by calling functions with inputs and asserting outputs — no mocks required.
-
-Minimize the use of `MagicMock`, `patch`, and similar tools. Heavy mocking is a signal that side effects have leaked into business logic. Prefer black-box testing: assert on observable outputs and return values, not on internal calls or implementation details.
-
-For I/O and integration testing, prefer the native testing utilities of the framework over manually wiring HTTP clients or mocking invocations. Native test clients exercise the real stack with less boilerplate and fewer false positives.
+Use pytest. Minimize `MagicMock`, `patch` and `monkeypatch`: in Python they are the usual
+sign that side effects leaked into business logic. For web frameworks, use the native test
+client (for example FastAPI/Starlette `TestClient`).
 
 **Bad example**: mocking internals to test business logic
 ```python
@@ -447,14 +402,7 @@ def test_create_order(client: TestClient):
     assert response.status_code == 201
 ```
 
-
-## Cyclomatic complexity and method length
-
-Keep functions short and straight. A function longer than ~20 lines is a signal to extract smaller, named helpers.
-
-Do not add defensive checks for cases that cannot happen given the calling context. If no caller passes `None`, do not guard against `None`. If no caller passes an empty list, do not handle it. Unnecessary branches inflate complexity and imply to the reader that these cases are real concerns.
-
-Only validate at system boundaries — user input, external APIs, deserialization. Inside the system, trust the contracts established by your own code.
+## Cyclomatic complexity and function length
 
 **Bad example**: defensive checks that cannot be triggered by any real caller
 ```python
@@ -499,14 +447,11 @@ def process_order(order: Order) -> Receipt:
     return build_receipt(order.items, with_tax(total))
 ```
 
-
 ## Types
 
-Always use type hints. Avoid `hasattr`, `getattr`, `isinstance` checks, and other runtime type introspection — these are signs that the type system is not being used properly.
-
-Do not overuse generic container types like bare tuples. When a function returns or accepts multiple related values, introduce a named type. This makes the code self-documenting and prevents positional confusion at call sites.
-
-Union types (`X | Y`) are a code smell. A function that accepts or returns multiple unrelated types is doing too much. Prefer specific, focused functions over a single generic one. Use unions only when unavoidable — for example, at API or framework boundaries where the type is imposed externally.
+Always use type hints. Avoid `hasattr`, `getattr`, `isinstance` checks and other runtime type
+introspection. Union types (`X | Y`) and `Any` are a code smell outside boundaries imposed by
+an API or framework.
 
 **Bad example**: anonymous tuple hides meaning
 ```python

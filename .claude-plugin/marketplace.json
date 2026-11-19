@@ -11,7 +11,7 @@
     {
       "name": "codestyles",
       "source": "./plugins/codestyles",
-      "description": "Coding style guides as skills (python-style) plus advisory hooks: a PreToolUse reminder to apply the matching {language}-style skill, and a PostToolUse comment-style review of the code Claude just wrote."
+      "description": "Coding style guides as skills (generic-style for any language, python-style on top of it) plus advisory hooks: a PreToolUse reminder to apply the matching {language}-style skill or generic-style, and a PostToolUse comment-style review of the code Claude just wrote."
     },
     {
       "name": "bootstrap",
