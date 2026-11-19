@@ -10,6 +10,7 @@ import re
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from fnmatch import fnmatch
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,11 @@ class Config:
     max_ratio: float = 0.15
     ste_words: int = 20
     strict: bool = False
+    ignore: tuple[str, ...] = ()
+
+
+def parse_globs(raw: str) -> tuple[str, ...]:
+    return tuple(glob.strip() for glob in raw.split(",") if glob.strip())
 
 
 def config_from_env(env: Mapping[str, str]) -> Config:
@@ -26,6 +32,7 @@ def config_from_env(env: Mapping[str, str]) -> Config:
         max_ratio=float(env.get("COMMENT_MAX_RATIO", "0.15")),
         ste_words=int(env.get("COMMENT_STE_WORDS", "20")),
         strict=env.get("COMMENT_STRICT", "0") == "1",
+        ignore=parse_globs(env.get("COMMENT_IGNORE", "")),
     )
 
 
@@ -67,12 +74,12 @@ _SLASH = ("//",)
 _DASH = ("--",)
 _SEMI = (";",)
 _PCT = ("%",)
-DEFAULT_MARKERS = ("#", "//")
+NO_MARKERS: tuple[str, ...] = ()
 
 LINE_MARKERS: dict[str, tuple[str, ...]] = {
     ".py": _HASH, ".pyw": _HASH, ".pyi": _HASH, ".rb": _HASH, ".sh": _HASH,
     ".bash": _HASH, ".zsh": _HASH, ".ps1": _HASH, ".psm1": _HASH, ".pl": _HASH,
-    ".pm": _HASH, ".r": _HASH, ".yaml": _HASH, ".yml": _HASH, ".toml": _HASH,
+    ".pm": _HASH, ".r": _HASH, ".ipynb": _HASH,
     ".tf": _HASH, ".tfvars": _HASH, ".ex": _HASH, ".exs": _HASH, ".coffee": _HASH,
     ".mk": _HASH, ".cmake": _HASH, ".m4": _HASH,
     ".js": _SLASH, ".jsx": _SLASH, ".mjs": _SLASH, ".cjs": _SLASH, ".ts": _SLASH,
@@ -103,7 +110,7 @@ BLOCK_DELIMS: dict[str, tuple[Delimiter, ...]] = {
     ".mm": _C_BLOCK, ".css": _C_BLOCK, ".scss": _C_BLOCK, ".less": _C_BLOCK,
     ".sql": _C_BLOCK,
     ".html": _HTML_BLOCK, ".htm": _HTML_BLOCK, ".xml": _HTML_BLOCK,
-    ".vue": _HTML_BLOCK, ".svelte": _HTML_BLOCK, ".md": _HTML_BLOCK,
+    ".vue": _HTML_BLOCK, ".svelte": _HTML_BLOCK,
 }
 PY_DOC_EXTS = {".py", ".pyw", ".pyi"}
 _TRIPLES = ('"""', "'''")
@@ -120,8 +127,18 @@ def _extension(name: str) -> str:
 def rules_for(path: str) -> LanguageRules:
     name = _basename(path).lower()
     ext = _extension(name)
-    line_markers = BASENAME_MARKERS.get(name) or LINE_MARKERS.get(ext, DEFAULT_MARKERS)
+    line_markers = BASENAME_MARKERS.get(name) or LINE_MARKERS.get(ext, NO_MARKERS)
     return LanguageRules(line_markers, BLOCK_DELIMS.get(ext, ()), ext in PY_DOC_EXTS)
+
+
+def _relative_to(path: str, cwd: str) -> str:
+    prefix = cwd.rstrip("/") + "/"
+    return path[len(prefix):] if cwd and path.startswith(prefix) else path
+
+
+def is_ignored(path: str, cwd: str, globs: tuple[str, ...]) -> bool:
+    relative = _relative_to(path, cwd)
+    return any(fnmatch(relative, glob) or fnmatch(path, glob) for glob in globs)
 
 
 def find_marker(line: str, markers: tuple[str, ...], lineno: int = 0) -> Comment | None:
@@ -456,6 +473,22 @@ def tool_args(payload: Mapping[str, object]) -> Mapping[str, object]:
     return {}
 
 
+def payload_str(payload: Mapping[str, object], key: str) -> str:
+    value = payload.get(key)
+    return value if isinstance(value, str) else ""
+
+
+def reviewed_files(
+    payload: Mapping[str, object], globs: tuple[str, ...]
+) -> tuple[tuple[str, str], ...]:
+    cwd = payload_str(payload, "cwd")
+    return tuple(
+        (path, text)
+        for path, text in changed_files(tool_args(payload))
+        if not is_ignored(path, cwd, globs)
+    )
+
+
 def tool_name(payload: Mapping[str, object]) -> str:
     for key in ("tool_name", "toolName"):
         value = payload.get(key)
@@ -468,7 +501,7 @@ def review(payload: Mapping[str, object], config: Config) -> str | None:
     name = tool_name(payload)
     contexts = [
         context
-        for path, text in changed_files(tool_args(payload))
+        for path, text in reviewed_files(payload, config.ignore)
         if (context := build_context(text, path, config, name))
     ]
     return "\n\n".join(contexts) or None

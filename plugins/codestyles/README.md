@@ -15,8 +15,10 @@ Coding style guides for Claude Code, plus two hooks that keep generated code on-
 
 | Event | Matcher | What it does |
 |-------|---------|--------------|
-| `PreToolUse` | `Write\|Edit\|MultiEdit\|NotebookEdit` | Before Claude writes a source file, reminds it to read and apply the matching `{language}-style` skill together with `generic-style`, which it builds on. For a language without its own skill, points at `generic-style` alone. |
-| `PostToolUse` | `Write\|Edit\|MultiEdit\|NotebookEdit` | Reviews comments in the **changed code only**: clean-code stance (a comment usually means the code could be clearer — keep one only for tracker-linked `TODO`/`FIXME` tech debt or public-API docs), comment density, comment length/spacing/trailing whitespace, and ASD-STE100 phrasing. Docstring- and block-comment-aware. |
+| `PreToolUse` | `Write\|Edit\|MultiEdit\|NotebookEdit` | Before Claude writes a source file, reminds it to read and apply the matching `{language}-style` skill together with `generic-style`, which it builds on. For a language without its own skill, points at `generic-style` alone. Reminds **once per language per session**: languages already reminded are remembered in `$TMPDIR/codestyles-precheck/<session_id>.json`. |
+| `PostToolUse` | `Write\|Edit\|MultiEdit\|NotebookEdit` | Reviews comments in **source code only** and in the **changed code only**: clean-code stance (a comment usually means the code could be clearer — keep one only for tracker-linked `TODO`/`FIXME` tech debt or public-API docs), comment density, comment length/spacing/trailing whitespace, and ASD-STE100 phrasing. Docstring- and block-comment-aware. |
+
+Only source files are reviewed: prose and data files (`.md`, `.txt`, `.rst`, `.json`, `.yaml`, `.yml`, `.toml`) and unknown extensions are skipped. Both hooks also skip paths matching `COMMENT_IGNORE`.
 
 Both hooks read the Claude Code hook payload from stdin and understand every write shape: `Write` (`content`/`file_text`), `Edit` (`new_string`, or nested `edits[]`), `MultiEdit` (`file_edits[]`, reported per file), and `NotebookEdit` (`new_source`).
 
@@ -34,6 +36,7 @@ Set these before starting Claude Code:
 | `COMMENT_MAX_RATIO` | `0.15` | Comment-to-code ratio above which the density warning fires. |
 | `COMMENT_STE_WORDS` | `20` | Max words per comment sentence (ASD-STE100). |
 | `COMMENT_STRICT` | unset | `1` also flags comments that do not start with a capital letter. |
+| `COMMENT_IGNORE` | unset | Comma-separated globs of paths both hooks skip, matched against the path relative to the project directory and against the absolute path. Example: `.specify/**,.claude/skills/**`. |
 
 ## Development
 

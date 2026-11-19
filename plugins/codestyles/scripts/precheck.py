@@ -4,11 +4,24 @@
 # PreToolUse hook: points Claude at a matching codestyle skill. See the plugin README.
 from __future__ import annotations
 
+import json
+import os
+import re
 import sys
-from collections.abc import Mapping
+import tempfile
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
-from checker import _basename, _extension, changed_files, emit, parse_payload, tool_args
+from checker import (
+    _basename,
+    _extension,
+    config_from_env,
+    emit,
+    parse_payload,
+    payload_str,
+    reviewed_files,
+)
 
 STYLE_SUFFIX = "-style"
 PLUGIN_NAME = "codestyles"
@@ -75,17 +88,44 @@ def precheck_context(path: str, available: frozenset[str]) -> str | None:
     return None
 
 
-def _unique(values: list[str]) -> list[str]:
-    return list(dict.fromkeys(values))
+@dataclass(frozen=True)
+class Reminder:
+    language: str
+    context: str
 
 
-def review(payload: Mapping[str, object], available: frozenset[str]) -> str | None:
-    contexts = [
-        context
-        for path, _ in changed_files(tool_args(payload))
+def first_per_language(candidates: Iterable[Reminder]) -> tuple[Reminder, ...]:
+    by_language: dict[str, Reminder] = {}
+    for reminder in candidates:
+        by_language.setdefault(reminder.language, reminder)
+    return tuple(by_language.values())
+
+
+def reminders(
+    payload: Mapping[str, object], available: frozenset[str], ignore: tuple[str, ...] = ()
+) -> tuple[Reminder, ...]:
+    return first_per_language(
+        Reminder(language_for(path), context)
+        for path, _ in reviewed_files(payload, ignore)
         if (context := precheck_context(path, available))
-    ]
-    return "\n".join(_unique(contexts)) or None
+    )
+
+
+def unseen(candidates: tuple[Reminder, ...], seen: frozenset[str]) -> tuple[Reminder, ...]:
+    return tuple(reminder for reminder in candidates if reminder.language not in seen)
+
+
+def reminder_text(selected: tuple[Reminder, ...]) -> str | None:
+    return "\n".join(reminder.context for reminder in selected) or None
+
+
+def review(
+    payload: Mapping[str, object],
+    available: frozenset[str],
+    seen: frozenset[str] = frozenset(),
+    ignore: tuple[str, ...] = (),
+) -> str | None:
+    return reminder_text(unseen(reminders(payload, available, ignore), seen))
 
 
 def available_languages(skills_dir: Path) -> frozenset[str]:
@@ -102,9 +142,45 @@ def skills_dir() -> Path:
     return Path(__file__).resolve().parents[1] / "skills"
 
 
+def state_path(session_id: str) -> Path:
+    safe_id = re.sub(r"[^A-Za-z0-9_-]", "_", session_id)
+    return Path(tempfile.gettempdir()) / "codestyles-precheck" / f"{safe_id}.json"
+
+
+def load_seen(path: Path) -> frozenset[str]:
+    try:
+        return frozenset(json.loads(path.read_text()))
+    except FileNotFoundError:
+        return frozenset()
+    except (OSError, ValueError, TypeError):
+        # A broken state file only costs a repeated reminder; the hook must not fail.
+        return frozenset()
+
+
+def save_seen(path: Path, seen: frozenset[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(sorted(seen)))
+
+
+def remind_once_per_session(
+    payload: Mapping[str, object], available: frozenset[str], ignore: tuple[str, ...]
+) -> str | None:
+    session_id = payload_str(payload, "session_id")
+    if not session_id:
+        return review(payload, available, ignore=ignore)
+    path = state_path(session_id)
+    seen = load_seen(path)
+    fresh = unseen(reminders(payload, available, ignore), seen)
+    if fresh:
+        save_seen(path, seen | {reminder.language for reminder in fresh})
+    return reminder_text(fresh)
+
+
 def main() -> int:
     payload = parse_payload(sys.stdin.read())
-    return emit("PreToolUse", review(payload, available_languages(skills_dir())))
+    ignore = config_from_env(os.environ).ignore
+    available = available_languages(skills_dir())
+    return emit("PreToolUse", remind_once_per_session(payload, available, ignore))
 
 
 if __name__ == "__main__":

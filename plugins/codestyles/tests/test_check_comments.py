@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -25,7 +26,7 @@ def findings(text: str, path: str, config: Config = DEFAULT) -> tuple[str, ...]:
     return cc.scan(text, cc.rules_for(path), config).findings
 
 
-@pytest.mark.parametrize("path", ["a.py", "b.rb", "c.sh", "d.yaml", "e.tf", "f.ps1"])
+@pytest.mark.parametrize("path", ["a.py", "b.rb", "c.sh", "d.ipynb", "e.tf", "f.ps1"])
 def test_hash_languages(path: str) -> None:
     assert cc.rules_for(path).line_markers == ("#",)
 
@@ -48,8 +49,53 @@ def test_windows_path_basename() -> None:
     assert cc.rules_for(r"C:\\project\\app\\main.py").line_markers == ("#",)
 
 
-def test_unknown_extension_defaults() -> None:
-    assert cc.rules_for("x.unknown").line_markers == ("#", "//")
+def test_unknown_extension_has_no_markers() -> None:
+    assert cc.rules_for("x.unknown").line_markers == ()
+
+
+@pytest.mark.parametrize(
+    "path", ["README.md", "notes.txt", "doc.rst", "data.json", "c.yaml", "c.yml", "p.toml"]
+)
+def test_prose_and_data_files_are_not_reviewed(path: str) -> None:
+    assert count("# Heading\n<!-- note -->\n// line\nvalue = 1\n", path) == 0
+
+
+def test_markdown_write_produces_no_review() -> None:
+    payload = {
+        "tool_name": "Write",
+        "tool_input": {"file_path": "spec.md", "content": "# Title\n\n<!-- guidance -->\n"},
+    }
+    assert cc.review(payload, DEFAULT) is None
+
+
+def test_parse_globs_trims_and_drops_empty() -> None:
+    globs = cc.parse_globs(" .specify/** , ,.claude/skills/**")
+    assert globs == (".specify/**", ".claude/skills/**")
+
+
+def test_config_reads_comment_ignore() -> None:
+    config = cc.config_from_env({"COMMENT_IGNORE": ".specify/**,vendor/*"})
+    assert config.ignore == (".specify/**", "vendor/*")
+
+
+def test_is_ignored_matches_relative_to_cwd() -> None:
+    globs = (".specify/**",)
+    assert cc.is_ignored("/repo/.specify/scripts/a.sh", "/repo", globs)
+    assert not cc.is_ignored("/repo/src/a.sh", "/repo", globs)
+
+
+def test_is_ignored_matches_absolute_glob() -> None:
+    assert cc.is_ignored("/repo/gen/a.py", "", ("*/gen/*",))
+
+
+def test_review_skips_ignored_files() -> None:
+    payload = {
+        "cwd": "/repo",
+        "tool_name": "Write",
+        "tool_input": {"file_path": "/repo/.specify/scripts/a.sh", "content": "#bad\n"},
+    }
+    assert cc.review(payload, Config(ignore=(".specify/**",))) is None
+    assert cc.review(payload, DEFAULT) is not None
 
 
 def test_find_marker_ignores_string_literal() -> None:
@@ -309,7 +355,8 @@ def test_precheck_unknown_extension() -> None:
 
 def test_precheck_language_skill_points_to_generic() -> None:
     ctx = pc.precheck_context("src/app.py", WITH_GENERIC)
-    assert ctx is not None and "codestyles:python-style" in ctx and "codestyles:generic-style" in ctx
+    assert ctx is not None
+    assert "codestyles:python-style" in ctx and "codestyles:generic-style" in ctx
 
 
 def test_precheck_falls_back_to_generic() -> None:
@@ -379,6 +426,65 @@ def test_emit_stays_silent_without_context(capsys: pytest.CaptureFixture[str]) -
 
 def test_available_languages_reads_real_skills_dir() -> None:
     assert {"python", "generic"} <= pc.available_languages(pc.skills_dir())
+
+
+def test_precheck_skips_ignored_files() -> None:
+    payload = {
+        "cwd": "/repo",
+        "tool_name": "Write",
+        "tool_input": {"file_path": "/repo/.claude/skills/x/a.py", "content": "x=1\n"},
+    }
+    assert pc.review(payload, WITH_GENERIC, ignore=(".claude/skills/**",)) is None
+    assert pc.review(payload, WITH_GENERIC) is not None
+
+
+def test_precheck_reminds_once_per_language() -> None:
+    payload = {
+        "tool_name": "MultiEdit",
+        "tool_input": {
+            "file_edits": [
+                {"file_path": "a.go", "edits": [{"old_str": "x", "new_str": "y"}]},
+                {"file_path": "b.go", "edits": [{"old_str": "x", "new_str": "y"}]},
+                {"file_path": "c.py", "edits": [{"old_str": "x", "new_str": "y"}]},
+            ]
+        },
+    }
+    assert [r.language for r in pc.reminders(payload, WITH_GENERIC)] == ["go", "python"]
+
+
+def test_precheck_skips_languages_already_seen() -> None:
+    payload = {"tool_name": "Write", "tool_input": {"file_path": "a.py", "content": "x=1\n"}}
+    assert pc.review(payload, WITH_GENERIC, seen=frozenset({"python"})) is None
+    assert pc.review(payload, WITH_GENERIC, seen=frozenset({"go"})) is not None
+
+
+def test_load_seen_tolerates_missing_and_broken_state(tmp_path: Path) -> None:
+    assert pc.load_seen(tmp_path / "missing.json") == frozenset()
+    broken = tmp_path / "broken.json"
+    broken.write_text("{not json")
+    assert pc.load_seen(broken) == frozenset()
+
+
+def _precheck(payload: dict, tmpdir: Path) -> str:
+    proc = subprocess.run(
+        [sys.executable, str(SCRIPTS / "precheck.py")],
+        input=json.dumps(payload),
+        capture_output=True,
+        text=True,
+        env={**os.environ, "TMPDIR": str(tmpdir)},
+    )
+    assert proc.returncode == 0, proc.stderr
+    return proc.stdout
+
+
+def test_precheck_session_reminds_each_language_once(tmp_path: Path) -> None:
+    def write(path: str) -> dict:
+        return {"session_id": "s-1", "tool_name": "Write",
+                "tool_input": {"file_path": path, "content": "x=1\n"}}
+
+    assert "python-style" in _precheck(write("a.py"), tmp_path)
+    assert _precheck(write("b.py"), tmp_path).strip() == ""
+    assert "generic-style" in _precheck(write("main.go"), tmp_path)
 
 
 def test_python_style_references_generic_style() -> None:
